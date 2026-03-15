@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>日语数词全能王</title>
+    <link rel="manifest" href="./manifest.json">
+    <style>
+        :root {
+            --primary: #58cc02; --primary-shadow: #58a700;
+            --wrong: #ff4b4b; --wrong-shadow: #ea2b2b;
+            --bg: #ffffff; --surface: #ffffff;
+            --border: #e5e5e5; --text: #4b4b4b;
+            --text-light: #afafaf; --selected-bg: #ddf4ff;
+            --selected-border: #84d8ff;
+        }
+        [data-theme="dark"] {
+            --bg: #131f24; --surface: #131f24; --border: #37464f; 
+            --text: #eeeeee; --text-light: #808588; --selected-bg: #202f36;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0; background: var(--bg); color: var(--text);
+            height: 100vh; display: flex; justify-content: center; overflow: hidden;
+        }
+        #app { width: 100%; max-width: 600px; display: flex; flex-direction: column; padding: 20px; position: relative; }
+        
+        /* 顶部状态栏 */
+        .header { display: flex; align-items: center; margin-bottom: 20px; gap: 10px; }
+        .progress-bg { flex-grow: 1; height: 12px; background: var(--border); border-radius: 6px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: 0.4s; }
+        .stats-item { font-weight: bold; font-size: 14px; white-space: nowrap; }
+
+        /* 题目区 */
+        .q-card { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .q-type { color: var(--primary); font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        .q-target { font-size: 56px; font-weight: 900; margin: 10px 0; }
+        
+        /* 选项区 */
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; margin-bottom: 120px; }
+        .option {
+            background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+            padding: 18px 10px; font-size: 18px; font-weight: bold; cursor: pointer;
+            transition: 0.1s; border-bottom-width: 5px; text-align: center;
+        }
+        .option.selected { border-color: var(--selected-border); background: var(--selected-bg); color: #1cb0f6; }
+        .option:active { border-bottom-width: 2px; transform: translateY(3px); }
+        .option .ro { font-size: 12px; display: block; opacity: 0.6; font-weight: normal; }
+
+        /* 底部反馈区 */
+        .footer {
+            position: absolute; bottom: 0; left: 0; right: 0; padding: 20px;
+            background: var(--surface); border-top: 2px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            transform: translateY(100%); transition: 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+        .footer.show { transform: translateY(0); }
+        .footer.correct { background: #d7ffb8; border-top-color: #a5d6a7; }
+        .footer.wrong { background: #ffdfe0; border-top-color: #ef9a9a; }
+        
+        .btn {
+            padding: 15px 35px; font-size: 18px; font-weight: 800; border: none;
+            border-radius: 12px; cursor: pointer; color: white; transition: 0.1s;
+        }
+        .btn-check { background: var(--primary); box-shadow: 0 4px 0 var(--primary-shadow); width: 100%; }
+        .correct .btn-next { background: var(--primary); box-shadow: 0 4px 0 var(--primary-shadow); }
+        .wrong .btn-next { background: var(--wrong); box-shadow: 0 4px 0 var(--wrong-shadow); }
+
+        /* 词汇表查看器 */
+        #list-modal {
+            position: fixed; inset: 0; background: var(--bg); z-index: 300;
+            display: none; flex-direction: column; padding: 20px;
+        }
+        .list-container { overflow-y: auto; flex-grow: 1; }
+        .list-item { padding: 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+
+        .shake { animation: shake 0.4s; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="header">
+        <button onclick="toggleList(true)" style="background:none; border:none; font-size:20px; cursor:pointer;">📖</button>
+        <div class="progress-bg"><div class="progress-fill" id="progress"></div></div>
+        <div class="stats-item">❤️ <span id="lives">3</span></div>
+        <div class="stats-item">🏆 <span id="score">0</span></div>
+    </div>
+
+    <div class="q-card" id="q-card">
+        <div class="q-type" id="q-type">TYPE</div>
+        <div class="q-target" id="q-target">--</div>
+        <div class="options-grid" id="options-grid"></div>
+    </div>
+
+    <div class="footer" id="footer">
+        <div id="fb-text">
+            <div id="fb-title" style="font-size: 20px; font-weight: 900;"></div>
+            <div id="fb-desc" style="font-size: 14px; font-weight: bold; opacity: 0.8;"></div>
+        </div>
+        <button class="btn btn-check" id="action-btn">检查</button>
+    </div>
+
+    <div id="list-modal">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2>全量词库预览</h2>
+            <button onclick="toggleList(false)" class="btn" style="background:var(--text); padding:10px 20px;">关闭</button>
+        </div>
+        <div class="list-container" id="full-list"></div>
+    </div>
+</div>
+
+<script>
+    /* --- 核心词库：覆盖所有关键数词 --- */
+    const VOCAB = [
+        // 基础数字
+        { ja: "ぜろ", ro: "zero", zh: "0", type: "数字" },
+        { ja: "いち", ro: "ichi", zh: "1", type: "数字" },
+        { ja: "に", ro: "ni", zh: "2", type: "数字" },
+        { ja: "さん", ro: "san", zh: "3", type: "数字" },
+        { ja: "よん", ro: "yon", zh: "4", type: "数字" },
+        { ja: "ご", ro: "go", zh: "5", type: "数字" },
+        { ja: "ろく", ro: "roku", zh: "6", type: "数字" },
+        { ja: "なな", ro: "nana", zh: "7", type: "数字" },
+        { ja: "はち", ro: "hachi", zh: "8", type: "数字" },
+        { ja: "きゅう", ro: "kyuu", zh: "9", type: "数字" },
+        { ja: "じゅう", ro: "juu", zh: "10", type: "数字" },
+        { ja: "ひゃく", ro: "hyaku", zh: "100", type: "数字" },
+        { ja: "せん", ro: "sen", zh: "1000", type: "数字" },
+        { ja: "いちまん", ro: "ichiman", zh: "1万", type: "数字" },
+
+        // 时间：小时 (含 4, 7, 9 变音)
+        ...[1,2,3,4,5,6,7,8,9,10,11,12].map(n => {
+            const map = {4:"よじ", 7:"しちじ", 9:"くじ"};
+            const suffix = "じ";
+            const romaji = {4:"yoji", 7:"shichiji", 9:"kuji"};
+            return {
+                ja: map[n] || (["","いち","に","さん","","ご","ろく","","はち","","じゅう","じゅういち","じゅうに"][n]+suffix),
+                ro: romaji[n] || (n+"ji"),
+                zh: n+"点", type: "时间"
+            }
+        }),
+
+        // 时间：分钟 (含促音/变音)
+        { ja: "いっぷん", ro: "ippun", zh: "1分钟", type: "时间" },
+        { ja: "さんぷん", ro: "sanpun", zh: "3分钟", type: "时间" },
+        { ja: "ろっぷん", ro: "roppun", zh: "6分钟", type: "时间" },
+        { ja: "はっぷん", ro: "happun", zh: "8分钟", type: "时间" },
+        { ja: "じゅっぷん", ro: "juppun", zh: "10分钟", type: "时间" },
+        { ja: "じゅうごふん", ro: "juugofun", zh: "15分钟", type: "时间" },
+        { ja: "さんじゅっぷん", ro: "sanjuppun", zh: "30分钟", type: "时间" },
+
+        // 月份 (含 4, 7, 9 变音)
+        ...[1,2,3,4,5,6,7,8,9,10,11,12].map(n => {
+            const map = {4:"しがつ", 7:"しちがつ", 9:"くがつ"};
+            const names = ["","いち","に","さん","","ご","ろく","","はち","","じゅう","じゅういち","じゅうに"];
+            return { ja: map[n] || names[n]+"がつ", ro: n+"gatsu", zh: n+"月", type: "日期" }
+        }),
+
+        // 日期：特殊天数 (1-10, 14, 20, 24)
+        { ja: "ついたち", ro: "tsuitachi", zh: "1号", type: "日期" },
+        { ja: "ふつか", ro: "futsuka", zh: "2号", type: "日期" },
+        { ja: "みっか", ro: "mikka", zh: "3号", type: "日期" },
+        { ja: "よっか", ro: "yokka", zh: "4号", type: "日期" },
+        { ja: "いつか", ro: "itsuka", zh: "5号", type: "日期" },
+        { ja: "むいか", ro: "muika", zh: "6号", type: "日期" },
+        { ja: "なのか", ro: "nanoka", zh: "7号", type: "日期" },
+        { ja: "ようか", ro: "youka", zh: "8号", type: "日期" },
+        { ja: "ここのか", ro: "kokonoka", zh: "9号", type: "日期" },
+        { ja: "とおか", ro: "tooka", zh: "10号", type: "日期" },
+        { ja: "じゅうよっか", ro: "juuyokka", zh: "14号", type: "日期" },
+        { ja: "はつか", ro: "hatsuka", zh: "20号", type: "日期" },
+        { ja: "にじゅうよっか", ro: "nijuuyokka", zh: "24号", type: "日期" },
+
+        // 通用量词 (一つ〜十)
+        { ja: "ひとつ", ro: "hitotsu", zh: "1个 (通用)", type: "量词" },
+        { ja: "ふたつ", ro: "futatsu", zh: "2个 (通用)", type: "量词" },
+        { ja: "みっつ", ro: "mittsu", zh: "3个 (通用)", type: "量词" },
+        { ja: "よっつ", ro: "yottsu", zh: "4个 (通用)", type: "量词" },
+        { ja: "いつつ", ro: "itsutsu", zh: "5个 (通用)", type: "量词" },
+        { ja: "むっつ", ro: "muttsu", zh: "6个 (通用)", type: "量词" },
+        { ja: "ななつ", ro: "nanatsu", zh: "7个 (通用)", type: "量词" },
+        { ja: "やっつ", ro: "yattsu", zh: "8个 (通用)", type: "量词" },
+        { ja: "ここのつ", ro: "kokonotsu", zh: "9个 (通用)", type: "量词" },
+        { ja: "とお", ro: "too", zh: "10个 (通用)", type: "量词" },
+
+        // 人数
+        { ja: "ひとり", ro: "hitori", zh: "1个人", type: "量词" },
+        { ja: "ふたり", ro: "futari", zh: "2个人", type: "量词" },
+        { ja: "さんにん", ro: "sannin", zh: "3个人", type: "量词" },
+        { ja: "よにん", ro: "yonin", zh: "4个人", type: "量词" },
+
+        // 其他量词重点
+        { ja: "いっぽん", ro: "ippon", zh: "1本 (长条物)", type: "量词" },
+        { ja: "さんぼん", ro: "sanbon", zh: "3本 (变音)", type: "量词" },
+        { ja: "いちまい", ro: "ichimai", zh: "1枚 (薄片物)", type: "量词" },
+        { ja: "いっさつ", ro: "issatsu", zh: "1册 (书本)", type: "量词" },
+        { ja: "いっかい", ro: "ikkai", zh: "1层/1次", type: "量词" },
+        { ja: "さんがい", ro: "sangai", zh: "3层 (变音)", type: "量词" }
+    ];
+
+    /* --- 游戏逻辑 --- */
+    let game = {
+        queue: [], curr: 0, lives: 3, score: 0, status: 'ask', selected: null
+    };
+
+    function speak(text) {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ja-JP'; u.rate = 0.9;
+        speechSynthesis.speak(u);
+    }
+
+    function initGame() {
+        game.queue = [...VOCAB].sort(() => Math.random() - 0.5).slice(0, 10);
+        game.curr = 0; game.lives = 3; 
+        updateUI();
+        nextQuestion();
+    }
+
+    function nextQuestion() {
+        game.status = 'ask';
+        game.selected = null;
+        const q = game.queue[game.curr];
+        
+        document.getElementById('q-type').textContent = q.type;
+        document.getElementById('q-target').textContent = q.zh;
+        document.getElementById('footer').className = 'footer';
+        document.getElementById('action-btn').textContent = '检查';
+        document.getElementById('action-btn').className = 'btn btn-check';
+
+        // 生成干扰项
+        let distractors = VOCAB.filter(v => v.ja !== q.ja && v.type === q.type)
+                               .sort(() => Math.random() - 0.5).slice(0, 3);
+        let choices = [q, ...distractors].sort(() => Math.random() - 0.5);
+
+        const grid = document.getElementById('options-grid');
+        grid.innerHTML = '';
+        choices.forEach(c => {
+            const btn = document.createElement('div');
+            btn.className = 'option';
+            btn.innerHTML = `${c.ja} <span class="ro">${c.ro}</span>`;
+            btn.onclick = () => {
+                if(game.status !== 'ask') return;
+                game.selected = c;
+                speak(c.ja);
+                Array.from(grid.children).forEach(el => el.classList.remove('selected'));
+                btn.classList.add('selected');
+                document.getElementById('footer').classList.add('show');
+            };
+            grid.appendChild(btn);
+        });
+    }
+
+    document.getElementById('action-btn').onclick = () => {
+        if (game.status === 'ask') {
+            const q = game.queue[game.curr];
+            const isCorrect = game.selected.ja === q.ja;
+            game.status = 'wait';
+
+            if (isCorrect) {
+                document.getElementById('footer').className = 'footer show correct';
+                document.getElementById('fb-title').textContent = '正确！';
+                game.score += 10;
+            } else {
+                game.lives--;
+                document.getElementById('q-card').classList.add('shake');
+                setTimeout(() => document.getElementById('q-card').classList.remove('shake'), 400);
+                document.getElementById('footer').className = 'footer show wrong';
+                document.getElementById('fb-title').textContent = '出错了';
+                document.getElementById('fb-desc').textContent = `正确答案: ${q.ja}`;
+                game.queue.push(q);
+            }
+            document.getElementById('action-btn').textContent = '继续';
+            document.getElementById('action-btn').className = 'btn btn-next';
+            updateUI();
+            if(game.lives <= 0) alert("游戏结束！得分为: " + game.score);
+        } else {
+            game.curr++;
+            if (game.curr < game.queue.length) nextQuestion();
+            else alert("太棒了！你完成了本轮练习。");
+        }
+    };
+
+    function updateUI() {
+        document.getElementById('progress').style.width = (game.curr / game.queue.length * 100) + '%';
+        document.getElementById('lives').textContent = game.lives;
+        document.getElementById('score').textContent = game.score;
+    }
+
+    function toggleList(show) {
+        const modal = document.getElementById('list-modal');
+        modal.style.display = show ? 'flex' : 'none';
+        if(show) {
+            const container = document.getElementById('full-list');
+            container.innerHTML = VOCAB.map(v => `
+                <div class="list-item">
+                    <span><strong>${v.zh}</strong></span>
+                    <span>${v.ja} (${v.ro})</span>
+                </div>
+            `).join('');
+        }
+    }
+
+    initGame();
+</script>
+</body>
+</html>
